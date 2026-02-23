@@ -119,10 +119,64 @@ run_test("Restart",             "restart the pc",             "restart",   skip_
 # ── 11. Unknown input ─────────────────────────────────────────────────────────
 run_test("Unknown input",       "flibbertigibbet",            "unknown")
 
-# ── 12. Wake word stripping ───────────────────────────────────────────────────
+# ── 12. Compound: send message on WhatsApp ────────────────────────────────────
+run_test("WhatsApp (pattern 1)",
+         "send hi to varun cvr on whatsapp",
+         "send_message", skip_route=True)
+run_test("WhatsApp (pattern 2)",
+         "open whatsapp and send hello to varun cvr",
+         "send_message", skip_route=True)
+run_test("WhatsApp short form",
+         "whatsapp varun hello there",
+         "send_message", skip_route=True)
+run_test("Message saying",
+         "message varun cvr saying see you at 5",
+         "send_message", skip_route=True)
+
+# ── 13. Compound: email ───────────────────────────────────────────────────────
+run_test("Send email",
+         "send email to john@example.com saying meeting tomorrow",
+         "send_email", skip_route=True)
+run_test("Email about",
+         "email boss@work.com about quarterly report",
+         "send_email", skip_route=True)
+
+# ── 14. Compound: play media ─────────────────────────────────────────────────
+run_test("Play on Spotify",
+         "play shape of you on spotify",
+         "play_media", skip_route=True)
+run_test("YouTube search",
+         "search python tutorial on youtube",
+         "play_media", skip_route=True)
+run_test("YouTube (alt)",
+         "youtube and search machine learning",
+         "play_media", skip_route=True)
+
+# ── 15. Contact management ───────────────────────────────────────────────────
+run_test("Add contact",
+         "add contact mom phone +919876543210",
+         "add_contact", skip_route=True)
+run_test("Add contact email",
+         "save contact john email john@example.com",
+         "add_contact", skip_route=True)
+run_test("List contacts",
+         "show my contacts",
+         "list_contacts")
+
+# ── 16. Open URL ──────────────────────────────────────────────────────────────
+run_test("Open URL",
+         "open google.com",
+         "open_url", skip_route=True)
+
+# ── 17. Wake word stripping ──────────────────────────────────────────────────
 import re
-text = "hey nova open calculator"
-cleaned = re.sub(r"^(?:hey\s+)?nova[\s,]*", "", text, flags=re.IGNORECASE).strip()
+from config import WAKE_WORDS
+_WAKE_RE = re.compile(
+    r"^(?:" + "|".join(re.escape(w) for w in WAKE_WORDS) + r")[\s,.:!?]*",
+    re.IGNORECASE,
+)
+text = "hello open calculator"
+cleaned = _WAKE_RE.sub("", text).strip()
 print(f"\n{'─'*60}")
 print(f"  TEST: Wake word stripping")
 print(f"  Input:   \"{text}\"")

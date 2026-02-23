@@ -1,0 +1,14 @@
+{
+    "contacts": [
+        {
+            "name": "varun cvr",
+            "phone": "+91XXXXXXXXXX",
+            "email": ""
+        },
+        {
+            "name": "mom",
+            "phone": "+919876543210",
+            "email": ""
+        }
+    ]
+}

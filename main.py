@@ -1,7 +1,6 @@
 """
 Nova Voice Assistant — Main Entry Point
-Orchestrates wake‑word detection → STT → LLM → routing → TTS in a
-threaded, non‑blocking pipeline with graceful shutdown.
+Orchestrates wake‑word detection → STT → classify → route → TTS.
 
 Usage:
     python main.py              # voice mode (microphone)
@@ -11,22 +10,22 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import signal
 import threading
 import time
 from typing import Optional
 
-# Ensure the package root is on sys.path so relative imports work
-# when running ``python main.py`` from the assistant/ directory.
 from pathlib import Path
 
+# Ensure the package root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # Prevent hf_xet download failures on some Windows setups
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
 
-from config import WAKE_WORD
+from config import WAKE_WORD, WAKE_WORDS
 from utils.logger import setup_logging, get_logger
 from audio.text_to_speech import TextToSpeech
 from brain.llm_interface import LLMInterface
@@ -37,6 +36,12 @@ from router.command_router import CommandRouter
 
 log = get_logger("nova.main")
 
+# Regex to strip any leading wake word from the transcription
+_WAKE_RE = re.compile(
+    r"^(?:" + "|".join(re.escape(w) for w in WAKE_WORDS) + r")[\s,.:!?]*",
+    re.IGNORECASE,
+)
+
 
 class Nova:
     """
@@ -45,7 +50,7 @@ class Nova:
     Lifecycle:
         nova = Nova()
         nova.run()                  # voice mode (default)
-        nova.run_keyboard()         # keyboard / typing mode
+        nova.run(keyboard=True)     # keyboard / typing mode
     """
 
     def __init__(self, keyboard_mode: bool = False) -> None:
@@ -56,7 +61,7 @@ class Nova:
         log.info("  Mode: %s", "KEYBOARD" if keyboard_mode else "VOICE")
         log.info("=" * 60)
 
-        # ── Components ────────────────────────────────────────────────────
+        # ── Common components ─────────────────────────────────────────────
         self._tts = TextToSpeech()
         self._llm = LLMInterface()
         self._parser = IntentParser()
@@ -66,29 +71,39 @@ class Nova:
         # Voice‑only components (lazy init)
         self._stt = None
         self._detector = None
+        self._wake_event = threading.Event()
+        self._shutdown_event = threading.Event()
 
         if not keyboard_mode:
-            from audio.speech_to_text import SpeechToText
-            from audio.wake_word import WakeWordDetector
-            self._stt = SpeechToText()
-            # ── Threading primitives ──────────────────────────────────────
-            self._wake_event = threading.Event()
-            self._detector = WakeWordDetector(callback=self._on_wake)
-        else:
-            self._wake_event = threading.Event()
+            self._init_voice()
 
-        self._shutdown_event = threading.Event()
         log.info("All components initialised")
+
+    # ── Voice init (mic auto‑detect → wake + STT) ────────────────────────
+
+    def _init_voice(self) -> None:
+        from audio.mic_finder import find_working_mic
+        from audio.speech_to_text import SpeechToText
+        from audio.wake_word import WakeWordDetector
+
+        # Auto‑detect a working mic
+        mic_dev, mic_rate = find_working_mic()
+        print(f"\n  🎤  Using mic device {mic_dev} @ {mic_rate} Hz\n")
+
+        self._stt = SpeechToText(mic_device=mic_dev, mic_rate=mic_rate)
+        self._detector = WakeWordDetector(
+            callback=self._on_wake,
+            mic_device=mic_dev,
+            mic_rate=mic_rate,
+        )
 
     # ── Signal handling ───────────────────────────────────────────────────
 
     def _setup_signals(self) -> None:
-        """Register Ctrl‑C / SIGINT for graceful shutdown."""
-
-        def _handler(sig: int, _frame) -> None:  # type: ignore[override]
+        def _handler(sig: int, _frame):
             log.info("Received signal %d — shutting down …", sig)
             self._shutdown_event.set()
-            self._wake_event.set()  # unblock main loop if waiting
+            self._wake_event.set()
 
         signal.signal(signal.SIGINT, _handler)
         signal.signal(signal.SIGTERM, _handler)
@@ -96,14 +111,12 @@ class Nova:
     # ── Wake‑word callback ────────────────────────────────────────────────
 
     def _on_wake(self) -> None:
-        """Called from the wake‑word thread when the keyword is heard."""
         log.debug("_on_wake triggered")
         self._wake_event.set()
 
-    # ── Intent classification (shared) ────────────────────────────────────
+    # ── Intent classification ─────────────────────────────────────────────
 
     def _classify(self, text: str) -> str:
-        """Classify user text via LLM or fallback, return router response."""
         raw_response = None
         if self._llm.is_available():
             raw_response = self._llm.classify(text)
@@ -125,35 +138,61 @@ class Nova:
     def _process_command(self) -> None:
         """Record → transcribe → classify → route → speak."""
 
-        # 1. Audible acknowledgement
+        # Pause the wake-word detector so it doesn't fight for the mic
+        # and doesn't trigger again on the user's speech
+        if self._detector:
+            self._detector.pause()
+
+        # Audible + visual acknowledgement
         self._tts.speak("Yes?")
 
-        # 2. Record & transcribe
+        # Brief pause so TTS playback fully finishes before mic records
+        time.sleep(0.4)
+
+        # Record & transcribe (STT shows its own visual timer)
         text = self._stt.listen_and_transcribe()
+
+        # Resume wake-word detector
+        if self._detector:
+            self._detector.resume()
+
         if not text:
             self._tts.speak("Sorry, I didn't catch that.")
             return
 
-        log.info("User said: '%s'", text)
+        # Strip leading wake word from the transcription
+        cleaned = _WAKE_RE.sub("", text).strip()
+        text = cleaned if cleaned else text
 
-        # 3‑6. Classify → route → speak
+        log.info("User said: '%s'", text)
+        print(f"  🗣  You said: \033[1m{text}\033[0m")
+
         response = self._classify(text)
+        print(f"  🤖  Nova: {response}\n")
         self._tts.speak(response)
 
     # ── Run loops ─────────────────────────────────────────────────────────
 
     def run(self) -> None:
-        """Start in the configured mode."""
         if self._keyboard_mode:
             self._run_keyboard()
         else:
             self._run_voice()
 
     def _run_voice(self) -> None:
-        """Voice mode — microphone wake word + STT."""
         self._setup_signals()
         self._detector.start()
-        self._tts.speak(f"Nova is ready. Say {WAKE_WORD} to begin.")
+
+        print()
+        print("=" * 60)
+        print("  🟢  Nova Voice Assistant — VOICE MODE")
+        print(f"  Say \033[1;36mhello\033[0m or \033[1;36mhi\033[0m to wake me up,")
+        print("  then speak your command.")
+        print("  Press Ctrl+C to quit.")
+        print("=" * 60)
+        print()
+
+        self._tts.speak("Nova is ready. Say hello or hi to begin.")
         log.info("Entering main loop — waiting for wake word …")
 
         try:
@@ -175,12 +214,11 @@ class Nova:
             self._cleanup()
 
     def _run_keyboard(self) -> None:
-        """Keyboard mode — type commands instead of speaking."""
         self._setup_signals()
         print()
         print("=" * 60)
         print("  Nova Voice Assistant — KEYBOARD MODE")
-        print("  Type your commands below. Type 'quit' or 'exit' to stop.")
+        print("  Type your commands below.  Type 'quit' or 'exit' to stop.")
         print("=" * 60)
         print()
         self._tts.speak("Nova is ready in keyboard mode.")
@@ -199,13 +237,7 @@ class Nova:
                     break
 
                 # Strip wake word prefix if typed
-                import re
-                cleaned = re.sub(
-                    r"^(?:hey\s+)?nova[\s,]*",
-                    "",
-                    user_input,
-                    flags=re.IGNORECASE,
-                ).strip()
+                cleaned = _WAKE_RE.sub("", user_input).strip()
                 text = cleaned if cleaned else user_input
 
                 log.info("User typed: '%s'", text)
@@ -218,7 +250,6 @@ class Nova:
             self._cleanup()
 
     def _cleanup(self) -> None:
-        """Release all resources."""
         log.info("Cleaning up …")
         if self._detector:
             self._detector.stop()

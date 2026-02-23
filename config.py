@@ -18,16 +18,28 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── Wake Word ────────────────────────────────────────────────────────────────
-WAKE_WORD: str = "nova"
+WAKE_WORD: str = "hello"              # primary wake word (Vosk recognises well)
+WAKE_WORDS: list[str] = ["hello", "hi", "hey"]  # any of these triggers wake
 WAKE_WORD_SENSITIVITY: float = 0.6  # 0‑1  (lower = stricter)
 
 # ─── Audio / Microphone ──────────────────────────────────────────────────────
-AUDIO_SAMPLE_RATE: int = 16000
+# Auto-detect: try these (device_index, sample_rate) candidates at startup
+MIC_CANDIDATES: list[tuple[int, int]] = [
+    (1,  44100),   # MME Intel SST
+    (5,  44100),   # DirectSound Intel SST
+    (9,  48000),   # WASAPI Intel SST
+    (0,  44100),   # MME Sound Mapper
+    (4,  44100),   # DirectSound Primary
+]
+MIC_DEVICE_INDEX: int | None = None   # None = auto-detect at startup
+MIC_NATIVE_RATE: int = 44100          # overwritten by auto-detect
+MIC_WARMUP_SECONDS: float = 5.0       # seconds to wait during each probe
+AUDIO_SAMPLE_RATE: int = 16000   # Target rate for Whisper/Vosk
 AUDIO_CHANNELS: int = 1
 AUDIO_CHUNK_SIZE: int = 4096
 RECORD_SECONDS_MAX: float = 10.0  # max command length after wake word
-SILENCE_THRESHOLD: float = 0.3    # seconds of silence to stop recording
-SILENCE_ENERGY: int = 300         # RMS energy below which counts as silence
+SILENCE_THRESHOLD: float = 1.5    # seconds of silence to stop recording
+SILENCE_ENERGY: int = 100         # RMS energy below which counts as silence
 
 # ─── Speech‑to‑Text (faster‑whisper) ─────────────────────────────────────────
 WHISPER_MODEL_SIZE: str = "base"        # "tiny", "base", "small", "medium"
@@ -51,6 +63,14 @@ SUPPORTED_INTENTS: List[str] = [
     "time",
     "date",
     "greeting",
+    # Compound / follow-up
+    "send_message",
+    "send_email",
+    "play_media",
+    "open_url",
+    "add_contact",
+    "list_contacts",
+    # App control
     "open_app",
     "close_app",
     "set_volume",
@@ -62,6 +82,9 @@ SUPPORTED_INTENTS: List[str] = [
     "recall_note",
     "unknown",
 ]
+
+# ─── Contacts ─────────────────────────────────────────────────────────────
+CONTACTS_FILE = DATA_DIR / "contacts.json"
 
 # ─── Security — App Whitelist ─────────────────────────────────────────────────
 # Keys are lowercase friendly names.  Values are executable names that
