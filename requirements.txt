@@ -1,0 +1,17 @@
+# Nova Voice Assistant — Python dependencies
+# Install with:  pip install -r requirements.txt
+
+# Audio
+sounddevice>=0.4.6
+numpy>=1.24.0
+faster-whisper==1.1.0
+vosk==0.3.45
+
+# Text-to-Speech
+pyttsx3==2.98
+
+# LLM (Ollama REST client)
+requests>=2.31.0
+
+# Windows system integration (optional — enhances some features)
+# pywin32==306
