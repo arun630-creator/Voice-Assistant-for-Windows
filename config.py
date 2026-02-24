@@ -60,6 +60,7 @@ OLLAMA_TEMPERATURE: float = 0.1  # low = deterministic
 
 # ─── Intent Schema ────────────────────────────────────────────────────────────
 SUPPORTED_INTENTS: List[str] = [
+    # Informational
     "time",
     "date",
     "greeting",
@@ -73,13 +74,46 @@ SUPPORTED_INTENTS: List[str] = [
     # App control
     "open_app",
     "close_app",
-    "set_volume",
+    # System — power
     "shutdown",
     "restart",
+    "cancel_shutdown",
     "lock_pc",
+    "sleep_pc",
+    "hibernate_pc",
+    # System — audio / display
+    "set_volume",
+    "mute",
+    "unmute",
+    "set_brightness",
+    # System — network
+    "wifi_on",
+    "wifi_off",
+    "wifi_status",
+    "bluetooth_on",
+    "bluetooth_off",
+    # System — info
+    "battery_status",
+    "ip_address",
+    "screenshot",
+    # Clipboard
+    "read_clipboard",
+    "clear_clipboard",
+    # Timer
+    "set_timer",
+    "cancel_timer",
+    # File management
+    "create_folder",
+    "delete_folder",
+    "rename_folder",
+    "open_folder",
+    "list_files",
+    "empty_recycle_bin",
+    # Web / search / notes
     "search_web",
     "remember_note",
     "recall_note",
+    # Fallback
     "unknown",
 ]
 
@@ -125,9 +159,9 @@ APP_WHITELIST: Dict[str, str] = {
     "disk management": "diskmgmt.msc",
     "registry editor": "regedit.exe",
     "regedit": "regedit.exe",
-    "snipping tool": "SnippingTool.exe",
-    "snip": "SnippingTool.exe",
-    "screenshot": "SnippingTool.exe",
+    "snipping tool": "ms-screenclip:",
+    "snip": "ms-screenclip:",
+    "screenshot": "ms-screenclip:",
     "magnifier": "magnify.exe",
     "on screen keyboard": "osk.exe",
     "character map": "charmap.exe",
@@ -195,6 +229,8 @@ APP_WHITELIST: Dict[str, str] = {
     "steam": "steam.exe",
     "epic games": "EpicGamesLauncher.exe",
     "epic games launcher": "EpicGamesLauncher.exe",
+    "xbox": "xbox:",
+    "xbox game bar": "xbox:",
     # ── Productivity / Other ──────────────────────────────────────────────
     "notion": "Notion.exe",
     "obsidian": "Obsidian.exe",

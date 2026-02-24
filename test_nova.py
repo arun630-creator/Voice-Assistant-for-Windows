@@ -168,7 +168,49 @@ run_test("Open URL",
          "open google.com",
          "open_url", skip_route=True)
 
-# ── 17. Wake word stripping ──────────────────────────────────────────────────
+# ── 17. Power — cancel / sleep / hibernate ────────────────────────────────────
+run_test("Cancel shutdown",     "cancel shutdown",              "cancel_shutdown", skip_route=True)
+run_test("Sleep PC",            "put the computer to sleep",    "sleep_pc",        skip_route=True)
+run_test("Hibernate PC",       "hibernate the pc",             "hibernate_pc",    skip_route=True)
+
+# ── 18. Mute / Unmute ────────────────────────────────────────────────────────
+run_test("Mute",               "mute the sound",               "mute")
+run_test("Unmute",             "unmute audio",                  "unmute")
+
+# ── 19. Brightness ────────────────────────────────────────────────────────────
+run_test("Set brightness",     "set brightness to 80",         "set_brightness")
+
+# ── 20. Wi-Fi ────────────────────────────────────────────────────────────────
+run_test("Wi-Fi on",           "turn on wifi",                 "wifi_on",     skip_route=True)
+run_test("Wi-Fi off",          "turn off wifi",                "wifi_off",    skip_route=True)
+run_test("Wi-Fi status",       "wifi status",                  "wifi_status", skip_route=True)
+
+# ── 21. Bluetooth ────────────────────────────────────────────────────────────
+run_test("Bluetooth on",       "enable bluetooth",             "bluetooth_on",  skip_route=True)
+run_test("Bluetooth off",      "disable bluetooth",            "bluetooth_off", skip_route=True)
+
+# ── 22. Battery / IP / Screenshot ────────────────────────────────────────────
+run_test("Battery status",     "battery status",               "battery_status")
+run_test("IP address",         "what is my ip address",        "ip_address")
+run_test("Screenshot",         "take a screenshot",            "screenshot")
+
+# ── 23. Clipboard ────────────────────────────────────────────────────────────
+run_test("Read clipboard",     "read clipboard",               "read_clipboard")
+run_test("Clear clipboard",    "clear clipboard",              "clear_clipboard")
+
+# ── 24. Timer ────────────────────────────────────────────────────────────────
+run_test("Set timer",          "set timer for 5 minutes",      "set_timer")
+run_test("Cancel timer",       "cancel the timer",             "cancel_timer")
+
+# ── 25. File management ──────────────────────────────────────────────────────
+run_test("Create folder",     "create folder test on desktop",    "create_folder")
+run_test("Delete folder",     "delete folder test",               "delete_folder")
+run_test("Rename folder",     "rename folder old to new",         "rename_folder")
+run_test("Open folder",       "open my downloads",                "open_folder")
+run_test("List files",        "list files in documents",          "list_files")
+run_test("Empty recycle bin", "empty the recycle bin",            "empty_recycle_bin", skip_route=True)
+
+# ── 26. Wake word stripping ──────────────────────────────────────────────────
 import re
 from config import WAKE_WORDS
 _WAKE_RE = re.compile(
