@@ -3,13 +3,20 @@ Nova Voice Assistant — Central Configuration
 All tunable parameters and constants live here.
 """
 
+import sys
 from pathlib import Path
 from typing import Dict, List
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
-BASE_DIR: Path = Path(__file__).resolve().parent
+# When frozen by PyInstaller, _MEIPASS points to the temp extraction dir.
+# For one-dir builds, sys._MEIPASS == the dir containing the .exe.
+if getattr(sys, "frozen", False):
+    BASE_DIR: Path = Path(sys._MEIPASS).resolve()
+else:
+    BASE_DIR: Path = Path(__file__).resolve().parent
 DATA_DIR: Path = BASE_DIR / "data"
 LOG_DIR: Path = BASE_DIR / "logs"
+ASSETS_DIR: Path = BASE_DIR / "assets"
 DB_PATH: Path = DATA_DIR / "memory.db"
 VOSK_MODEL_DIR: Path = DATA_DIR / "vosk-model"
 
@@ -83,6 +90,8 @@ SUPPORTED_INTENTS: List[str] = [
     "hibernate_pc",
     # System — audio / display
     "set_volume",
+    "volume_up",
+    "volume_down",
     "mute",
     "unmute",
     "set_brightness",
@@ -92,6 +101,15 @@ SUPPORTED_INTENTS: List[str] = [
     "wifi_status",
     "bluetooth_on",
     "bluetooth_off",
+    # System — quick settings
+    "night_light_on",
+    "night_light_off",
+    "airplane_mode_on",
+    "airplane_mode_off",
+    "energy_saver_on",
+    "energy_saver_off",
+    "hotspot_on",
+    "hotspot_off",
     # System — info
     "battery_status",
     "ip_address",

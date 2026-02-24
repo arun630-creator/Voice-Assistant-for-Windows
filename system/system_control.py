@@ -33,6 +33,15 @@ from utils.logger import get_logger
 
 log = get_logger(__name__)
 
+# ── Optional pyautogui (for UI automation) ─────────────────────────────────────
+try:
+    import pyautogui as _pag
+    _pag.FAILSAFE = True
+    _HAS_PYAUTOGUI = True
+except ImportError:
+    _pag = None
+    _HAS_PYAUTOGUI = False
+
 
 class SystemControl:
     """Execute privileged Windows system commands safely."""
@@ -138,14 +147,20 @@ class SystemControl:
     # ══════════════════════════════════════════════════════════════════════
 
     @staticmethod
+    def _get_volume_interface():
+        """Get the pycaw IAudioEndpointVolume interface."""
+        from pycaw.pycaw import AudioUtilities
+        speakers = AudioUtilities.GetSpeakers()
+        # Newer pycaw (20251023+) wraps AudioDevice with .EndpointVolume
+        return speakers.EndpointVolume
+
+    @staticmethod
     def set_volume(level: int) -> str:
         """Set the master volume to *level* (0–100)."""
         level = max(0, min(100, level))
         log.info("Setting volume to %d%%", level)
         try:
-            from pycaw.pycaw import AudioUtilities
-            speakers = AudioUtilities.GetSpeakers()
-            volume = speakers.EndpointVolume
+            volume = SystemControl._get_volume_interface()
             volume.SetMasterVolumeLevelScalar(level / 100.0, None)
             return f"Volume set to {level} percent."
         except Exception as exc:
@@ -164,6 +179,25 @@ class SystemControl:
         except (subprocess.CalledProcessError, OSError) as exc:
             log.error("nircmd failed: %s", exc)
 
+        # Fallback: PowerShell via AudioDevice module or keypress simulation
+        try:
+            if _HAS_PYAUTOGUI:
+                # Mute first, then set absolute level via repeated key presses
+                # Press volume-down 50 times to zero, then volume-up 'level/2' times
+                _pag.press('volumemute')  # unmute if muted
+                time.sleep(0.1)
+                _pag.press('volumemute')  # toggle back
+                time.sleep(0.1)
+                # Each volume key press = ~2% change
+                for _ in range(50):
+                    _pag.press('volumedown')
+                presses_up = level // 2
+                for _ in range(presses_up):
+                    _pag.press('volumeup')
+                return f"Volume set to approximately {level} percent."
+        except Exception as exc:
+            log.error("pyautogui volume fallback failed: %s", exc)
+
         return f"Could not set volume to {level} percent."
 
     @staticmethod
@@ -171,28 +205,96 @@ class SystemControl:
         """Mute the master volume."""
         log.info("Muting volume")
         try:
-            from pycaw.pycaw import AudioUtilities
-            speakers = AudioUtilities.GetSpeakers()
-            volume = speakers.EndpointVolume
+            volume = SystemControl._get_volume_interface()
             volume.SetMute(True, None)
             return "Volume muted."
         except Exception as exc:
-            log.error("Mute failed: %s", exc)
-            return "Failed to mute volume."
+            log.error("Mute failed (pycaw): %s", exc)
+        # Fallback: nircmd
+        try:
+            subprocess.run(["nircmd", "mutesysvolume", "1"], check=True, timeout=5)
+            return "Volume muted."
+        except Exception:
+            pass
+        # Fallback: media key
+        if _HAS_PYAUTOGUI:
+            try:
+                _pag.press('volumemute')
+                return "Volume muted."
+            except Exception:
+                pass
+        return "Failed to mute volume."
 
     @staticmethod
     def unmute() -> str:
         """Unmute the master volume."""
         log.info("Unmuting volume")
         try:
-            from pycaw.pycaw import AudioUtilities
-            speakers = AudioUtilities.GetSpeakers()
-            volume = speakers.EndpointVolume
+            volume = SystemControl._get_volume_interface()
             volume.SetMute(False, None)
             return "Volume unmuted."
         except Exception as exc:
-            log.error("Unmute failed: %s", exc)
-            return "Failed to unmute volume."
+            log.error("Unmute failed (pycaw): %s", exc)
+        # Fallback: nircmd
+        try:
+            subprocess.run(["nircmd", "mutesysvolume", "0"], check=True, timeout=5)
+            return "Volume unmuted."
+        except Exception:
+            pass
+        # Fallback: media key
+        if _HAS_PYAUTOGUI:
+            try:
+                _pag.press('volumemute')
+                return "Volume unmuted."
+            except Exception:
+                pass
+        return "Failed to unmute volume."
+
+    @staticmethod
+    def volume_up(step: int = 10) -> str:
+        """Increase volume by *step* percent."""
+        log.info("Increasing volume by %d%%", step)
+        try:
+            vol = SystemControl._get_volume_interface()
+            current = vol.GetMasterVolumeLevelScalar()
+            new_level = min(1.0, current + step / 100.0)
+            vol.SetMasterVolumeLevelScalar(new_level, None)
+            return f"Volume increased to {int(new_level * 100)} percent."
+        except Exception as exc:
+            log.error("Volume up failed (pycaw): %s", exc)
+        # Fallback: media key (each press ~2%)
+        if _HAS_PYAUTOGUI:
+            try:
+                presses = max(1, step // 2)
+                for _ in range(presses):
+                    _pag.press('volumeup')
+                return f"Volume increased."
+            except Exception as exc:
+                log.error("Volume up fallback failed: %s", exc)
+        return "Failed to increase volume."
+
+    @staticmethod
+    def volume_down(step: int = 10) -> str:
+        """Decrease volume by *step* percent."""
+        log.info("Decreasing volume by %d%%", step)
+        try:
+            vol = SystemControl._get_volume_interface()
+            current = vol.GetMasterVolumeLevelScalar()
+            new_level = max(0.0, current - step / 100.0)
+            vol.SetMasterVolumeLevelScalar(new_level, None)
+            return f"Volume decreased to {int(new_level * 100)} percent."
+        except Exception as exc:
+            log.error("Volume down failed (pycaw): %s", exc)
+        # Fallback: media key (each press ~2%)
+        if _HAS_PYAUTOGUI:
+            try:
+                presses = max(1, step // 2)
+                for _ in range(presses):
+                    _pag.press('volumedown')
+                return f"Volume decreased."
+            except Exception as exc:
+                log.error("Volume down fallback failed: %s", exc)
+        return "Failed to decrease volume."
 
     # ══════════════════════════════════════════════════════════════════════
     #  Brightness
@@ -284,46 +386,149 @@ class SystemControl:
             return "Failed to check Wi-Fi status."
 
     @staticmethod
-    def bluetooth_on() -> str:
-        """Enable Bluetooth via PowerShell."""
-        log.info("Enabling Bluetooth")
+    def _toggle_bluetooth(enable: bool) -> str:
+        """Toggle Bluetooth on/off using multiple strategies."""
+        action = "Enabling" if enable else "Disabling"
+        state_word = "enabled" if enable else "disabled"
+        state_enum = "On" if enable else "Off"
+        log.info("%s Bluetooth", action)
+
+        # Strategy 1: WinRT Radio API with polling (no .AsTask() needed)
+        ps_script = (
+            "[Windows.Devices.Radios.Radio,Windows.System.Devices,"
+            "ContentType=WindowsRuntime] | Out-Null; "
+            "$op = [Windows.Devices.Radios.Radio]::GetRadiosAsync(); "
+            "while ($op.Status -eq 0) { Start-Sleep -Milliseconds 100 }; "
+            "if ($op.Status -ne 1) { Write-Output 'async_failed'; exit }; "
+            "$radios = $op.GetResults(); "
+            "$bt = $radios | Where-Object { $_.Kind -eq 'Bluetooth' }; "
+            "if ($bt) { "
+            f"  $setOp = $bt.SetStateAsync([Windows.Devices.Radios.RadioState]::{state_enum}); "
+            "  while ($setOp.Status -eq 0) { Start-Sleep -Milliseconds 100 }; "
+            "  if ($setOp.Status -eq 1) { Write-Output 'ok' } "
+            "  else { Write-Output 'set_failed' } "
+            "} else { Write-Output 'noradio' }"
+        )
         try:
-            subprocess.run(
-                [
-                    "powershell", "-NoProfile", "-Command",
-                    "Add-Type -AssemblyName System.Runtime.WindowsRuntime; "
-                    "$radio = [Windows.Devices.Radios.Radio,Windows.System.Devices,"
-                    "ContentType=WindowsRuntime]::GetRadiosAsync().GetAwaiter().GetResult() "
-                    "| Where-Object { $_.Kind -eq 'Bluetooth' }; "
-                    "$radio.SetStateAsync('On').GetAwaiter().GetResult()"
-                ],
-                check=True, timeout=15, capture_output=True,
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                capture_output=True, text=True, timeout=20,
             )
-            return "Bluetooth enabled."
+            out = result.stdout.strip()
+            if out == "ok":
+                return f"Bluetooth {state_word}."
+            log.warning("WinRT BT toggle: %s | err: %s", out, result.stderr.strip())
         except Exception as exc:
-            log.error("Bluetooth enable failed: %s", exc)
-            return "Failed to enable Bluetooth. Try toggling it in Settings."
+            log.warning("WinRT Bluetooth toggle failed: %s", exc)
+
+        # Strategy 2: Open Settings and auto-toggle via pyautogui
+        try:
+            os.startfile("ms-settings:bluetooth")
+            if _HAS_PYAUTOGUI:
+                def _toggle():
+                    time.sleep(3)
+                    _pag.press('tab', presses=4, interval=0.15)
+                    _pag.press('space')
+                    log.info("Toggled Bluetooth via Settings + pyautogui")
+                threading.Thread(target=_toggle, daemon=True).start()
+                return f"Toggling Bluetooth {'on' if enable else 'off'} in Settings."
+            return (
+                f"I opened Bluetooth settings — please toggle it "
+                f"{'on' if enable else 'off'} from there."
+            )
+        except Exception as exc:
+            log.error("Failed to open Bluetooth settings: %s", exc)
+            return f"Failed to {action.lower()} Bluetooth. Open Settings > Bluetooth manually."
+
+    @staticmethod
+    def bluetooth_on() -> str:
+        return SystemControl._toggle_bluetooth(True)
 
     @staticmethod
     def bluetooth_off() -> str:
-        """Disable Bluetooth via PowerShell."""
-        log.info("Disabling Bluetooth")
+        return SystemControl._toggle_bluetooth(False)
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  Quick Settings Toggles (Night Light, Airplane, Energy Saver, Hotspot)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _toggle_setting_via_ui(settings_uri: str, setting_name: str,
+                               enable: bool, tab_count: int = 4) -> str:
+        """Open a ms-settings page and auto-toggle the switch via pyautogui."""
+        action = "on" if enable else "off"
         try:
-            subprocess.run(
-                [
-                    "powershell", "-NoProfile", "-Command",
-                    "Add-Type -AssemblyName System.Runtime.WindowsRuntime; "
-                    "$radio = [Windows.Devices.Radios.Radio,Windows.System.Devices,"
-                    "ContentType=WindowsRuntime]::GetRadiosAsync().GetAwaiter().GetResult() "
-                    "| Where-Object { $_.Kind -eq 'Bluetooth' }; "
-                    "$radio.SetStateAsync('Off').GetAwaiter().GetResult()"
-                ],
-                check=True, timeout=15, capture_output=True,
-            )
-            return "Bluetooth disabled."
+            os.startfile(settings_uri)
         except Exception as exc:
-            log.error("Bluetooth disable failed: %s", exc)
-            return "Failed to disable Bluetooth."
+            log.error("Failed to open %s settings: %s", setting_name, exc)
+            return f"Failed to open {setting_name} settings."
+
+        if _HAS_PYAUTOGUI:
+            def _toggle():
+                time.sleep(3)
+                _pag.press('tab', presses=tab_count, interval=0.15)
+                _pag.press('space')
+                log.info("Toggled %s %s via Settings UI", setting_name, action)
+            threading.Thread(target=_toggle, daemon=True).start()
+            return f"Turning {setting_name} {action}."
+
+        return f"I opened {setting_name} settings — please toggle it {action} from there."
+
+    @staticmethod
+    def night_light_on() -> str:
+        """Enable Night Light."""
+        log.info("Enabling Night Light")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:nightlight", "Night Light", True, tab_count=3)
+
+    @staticmethod
+    def night_light_off() -> str:
+        """Disable Night Light."""
+        log.info("Disabling Night Light")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:nightlight", "Night Light", False, tab_count=3)
+
+    @staticmethod
+    def airplane_mode_on() -> str:
+        """Enable Airplane Mode."""
+        log.info("Enabling Airplane Mode")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:network-airplanemode", "Airplane Mode", True, tab_count=3)
+
+    @staticmethod
+    def airplane_mode_off() -> str:
+        """Disable Airplane Mode."""
+        log.info("Disabling Airplane Mode")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:network-airplanemode", "Airplane Mode", False, tab_count=3)
+
+    @staticmethod
+    def energy_saver_on() -> str:
+        """Enable Energy Saver / Battery Saver."""
+        log.info("Enabling Energy Saver")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:batterysaver", "Energy Saver", True, tab_count=4)
+
+    @staticmethod
+    def energy_saver_off() -> str:
+        """Disable Energy Saver / Battery Saver."""
+        log.info("Disabling Energy Saver")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:batterysaver", "Energy Saver", False, tab_count=4)
+
+    @staticmethod
+    def hotspot_on() -> str:
+        """Enable Mobile Hotspot."""
+        log.info("Enabling Mobile Hotspot")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:network-mobilehotspot", "Mobile Hotspot", True, tab_count=3)
+
+    @staticmethod
+    def hotspot_off() -> str:
+        """Disable Mobile Hotspot."""
+        log.info("Disabling Mobile Hotspot")
+        return SystemControl._toggle_setting_via_ui(
+            "ms-settings:network-mobilehotspot", "Mobile Hotspot", False, tab_count=3)
 
     @staticmethod
     def get_ip_address() -> str:
@@ -332,10 +537,9 @@ class SystemControl:
         # Local IP
         local_ip = "unknown"
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            s.close()
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
         except Exception:
             pass
 
@@ -388,26 +592,53 @@ class SystemControl:
         filename = f"screenshot_{timestamp}.png"
         save_path = Path.home() / "Desktop" / filename
 
+        # Strategy 1: PowerShell .NET (no extra packages needed)
         try:
-            import pyautogui
-            img = pyautogui.screenshot()
-            img.save(str(save_path))
-            log.info("Screenshot saved: %s", save_path)
-            return f"Screenshot saved to Desktop as {filename}."
-        except ImportError:
-            # Fallback: use Snipping Tool
-            try:
-                subprocess.Popen(
-                    ["explorer.exe", "ms-screenclip:"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                return "Opening Snipping Tool for screenshot."
-            except OSError:
-                return "Couldn't take a screenshot. Install pyautogui for auto-capture."
+            ps_script = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "Add-Type -AssemblyName System.Drawing; "
+                "$screen = [System.Windows.Forms.Screen]::PrimaryScreen; "
+                "$bmp = New-Object System.Drawing.Bitmap("
+                "$screen.Bounds.Width, $screen.Bounds.Height); "
+                "$gfx = [System.Drawing.Graphics]::FromImage($bmp); "
+                "$gfx.CopyFromScreen($screen.Bounds.Location, "
+                "[System.Drawing.Point]::Empty, $screen.Bounds.Size); "
+                f"$bmp.Save('{save_path}'); "
+                "$gfx.Dispose(); $bmp.Dispose(); "
+                "Write-Output 'ok'"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 and "ok" in result.stdout:
+                log.info("Screenshot saved: %s", save_path)
+                return f"Screenshot saved to Desktop as {filename}."
+            log.warning("PowerShell screenshot returned: %s | err: %s",
+                        result.stdout.strip(), result.stderr.strip())
         except Exception as exc:
-            log.error("Screenshot failed: %s", exc)
-            return "Failed to take screenshot."
+            log.warning("PowerShell screenshot failed: %s", exc)
+
+        # Strategy 2: pyautogui + Pillow
+        if _HAS_PYAUTOGUI:
+            try:
+                img = _pag.screenshot()
+                img.save(str(save_path))
+                log.info("Screenshot saved via pyautogui: %s", save_path)
+                return f"Screenshot saved to Desktop as {filename}."
+            except Exception as exc:
+                log.warning("pyautogui screenshot failed: %s", exc)
+
+        # Strategy 3: Snipping Tool
+        try:
+            subprocess.Popen(
+                ["explorer.exe", "ms-screenclip:"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return "Opening Snipping Tool for screenshot."
+        except OSError:
+            return "Couldn't take a screenshot."
 
     # ══════════════════════════════════════════════════════════════════════
     #  Timer
@@ -418,7 +649,8 @@ class SystemControl:
 
     @classmethod
     def set_timer(cls, seconds: int, tts_callback: Optional[Callable] = None) -> str:
-        """Set a countdown timer. When it finishes, TTS announces it."""
+        """Set a timer — opens the Windows Clock app and also keeps a
+        background TTS notification so Nova speaks when time is up."""
         if seconds <= 0:
             return "Timer must be positive."
         if seconds > 86400:
@@ -428,6 +660,14 @@ class SystemControl:
         if cls._active_timer and cls._active_timer.is_alive():
             cls._active_timer.cancel()
 
+        # Open Windows Clock app (Timer tab)
+        try:
+            os.startfile("ms-clock:")
+            log.info("Opened Windows Clock app")
+        except Exception as exc:
+            log.warning("Could not open Clock app: %s", exc)
+
+        # Background TTS notification when timer expires
         cls._timer_callback = tts_callback
 
         def _timer_done():
@@ -505,14 +745,28 @@ class SystemControl:
 
     @staticmethod
     def copy_to_clipboard(text: str) -> str:
-        """Copy text to the clipboard."""
+        """Copy text to the clipboard using ctypes."""
         try:
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
-                 f"Set-Clipboard -Value '{text.replace(chr(39), chr(39)+chr(39))}'"],
-                check=True, timeout=5, capture_output=True,
-            )
-            return f"Copied to clipboard."
+            import ctypes as _ct
+            user32 = _ct.windll.user32
+            kernel32 = _ct.windll.kernel32
+            if not user32.OpenClipboard(0):
+                return "Couldn't access the clipboard."
+            try:
+                user32.EmptyClipboard()
+                # Encode text as UTF-16-LE for CF_UNICODETEXT
+                encoded = text.encode("utf-16-le") + b"\x00\x00"
+                h_mem = kernel32.GlobalAlloc(0x0042, len(encoded))  # GMEM_MOVEABLE | GMEM_ZEROINIT
+                if not h_mem:
+                    return "Failed to copy to clipboard."
+                kernel32.GlobalLock.restype = _ct.c_void_p
+                ptr = kernel32.GlobalLock(h_mem)
+                _ct.memmove(ptr, encoded, len(encoded))
+                kernel32.GlobalUnlock(h_mem)
+                user32.SetClipboardData(13, h_mem)  # CF_UNICODETEXT = 13
+            finally:
+                user32.CloseClipboard()
+            return "Copied to clipboard."
         except Exception as exc:
             log.error("Copy to clipboard failed: %s", exc)
             return "Failed to copy to clipboard."
@@ -521,9 +775,12 @@ class SystemControl:
     def clear_clipboard() -> str:
         """Clear the clipboard."""
         try:
-            ctypes.windll.user32.OpenClipboard(0)
-            ctypes.windll.user32.EmptyClipboard()
-            ctypes.windll.user32.CloseClipboard()
+            if not ctypes.windll.user32.OpenClipboard(0):
+                return "Couldn't access the clipboard."
+            try:
+                ctypes.windll.user32.EmptyClipboard()
+            finally:
+                ctypes.windll.user32.CloseClipboard()
             return "Clipboard cleared."
         except Exception as exc:
             log.error("Clear clipboard failed: %s", exc)

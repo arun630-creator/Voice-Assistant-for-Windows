@@ -66,7 +66,7 @@ class Nova:
         self._llm = LLMInterface()
         self._parser = IntentParser()
         self._memory = Memory()
-        self._router = CommandRouter(self._memory)
+        self._router = CommandRouter(self._memory, tts_callback=self._tts.speak)
 
         # Voice‑only components (lazy init)
         self._stt = None
@@ -266,9 +266,20 @@ def main() -> None:
         action="store_true",
         help="Run in keyboard mode (type commands instead of speaking)",
     )
+    parser.add_argument(
+        "--tray", "-t",
+        action="store_true",
+        help="Run as a background desktop app with system tray icon",
+    )
     args = parser.parse_args()
-    nova = Nova(keyboard_mode=args.keyboard)
-    nova.run()
+
+    if args.tray:
+        from tray_app import NovaTrayApp
+        app = NovaTrayApp()
+        app.run()
+    else:
+        nova = Nova(keyboard_mode=args.keyboard)
+        nova.run()
 
 
 if __name__ == "__main__":

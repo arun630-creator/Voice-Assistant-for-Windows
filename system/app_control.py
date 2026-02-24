@@ -246,18 +246,23 @@ class AppControl:
             return _launch_start_app(display_name, app_id)
 
         # ── Last-resort: let Windows resolve the name directly ────────────
-        log.info("Trying Windows 'start' fallback for '%s'", app_name)
-        try:
-            subprocess.Popen(
-                ["cmd", "/c", "start", "", app_name],
-                shell=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return f"Trying to open {app_name}."
-        except OSError as exc:
-            log.error("Windows start fallback failed: %s", exc)
-            return f"Sorry, I couldn't open {app_name}."
+        # Only allow safe alphanumeric names (no shell metacharacters)
+        import re as _re
+        if _re.fullmatch(r"[\w\s.+\-]+", app_name):
+            log.info("Trying Windows 'start' fallback for '%s'", app_name)
+            try:
+                subprocess.Popen(
+                    ["cmd", "/c", "start", "", app_name],
+                    shell=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return f"Trying to open {app_name}."
+            except OSError as exc:
+                log.error("Windows start fallback failed: %s", exc)
+        else:
+            log.warning("Blocked unsafe app_name for 'start' fallback: %s", app_name)
+        return f"Sorry, I couldn't open {app_name}."
 
     @staticmethod
     def close_app(app_name: str) -> str:

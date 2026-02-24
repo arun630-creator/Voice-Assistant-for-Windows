@@ -17,5 +17,16 @@ requests>=2.31.0
 # UI automation (for follow-up actions like auto-sending WhatsApp)
 pyautogui>=0.9.54
 
-# Windows system integration (optional — enhances some features)
-# pywin32==306
+# Volume control
+pycaw>=20251023
+comtypes>=1.4.0
+
+# System tray / desktop app
+pystray>=0.19.5
+Pillow>=10.0.0
+
+# Windows system integration
+pywin32>=306
+
+# Build tools (optional — only needed to create .exe)
+# pyinstaller>=6.0

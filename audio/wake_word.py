@@ -70,22 +70,32 @@ class _StatusPrinter:
         self._lock = threading.Lock()
 
     def tick(self) -> None:
+        if not sys.stdout:
+            return
         with self._lock:
             ch = _SPINNER[self._idx % len(_SPINNER)]
             msg = (
                 f"\r  {ch}  Listening ... say "
                 f"\033[1;36mhello\033[0m or \033[1;36mhi\033[0m to wake Nova"
             )
-            sys.stdout.write(msg)
-            sys.stdout.flush()
+            try:
+                sys.stdout.write(msg)
+                sys.stdout.flush()
+            except (OSError, AttributeError):
+                pass
             self._idx += 1
 
     def clear(self, replacement: str = "") -> None:
+        if not sys.stdout:
+            return
         with self._lock:
-            sys.stdout.write(f"\r{' ' * 80}\r")
-            if replacement:
-                sys.stdout.write(replacement + "\n")
-            sys.stdout.flush()
+            try:
+                sys.stdout.write(f"\r{' ' * 80}\r")
+                if replacement:
+                    sys.stdout.write(replacement + "\n")
+                sys.stdout.flush()
+            except (OSError, AttributeError):
+                pass
             self._idx = 0
 
 

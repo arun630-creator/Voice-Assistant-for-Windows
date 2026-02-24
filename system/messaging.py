@@ -152,21 +152,39 @@ def search_youtube(query: str) -> str:
 
 
 def play_youtube(query: str) -> str:
-    """Open YouTube search and auto-click first video (best effort)."""
-    result = search_youtube(query)
+    """Open YouTube search and auto-play the first video result."""
+    encoded = urllib.parse.quote_plus(query)
+    url = f"https://www.youtube.com/results?search_query={encoded}"
+    log.info("YouTube play URL: %s", url)
+    try:
+        webbrowser.open(url)
+    except Exception as exc:
+        log.error("Failed to open YouTube: %s", exc)
+        return "Sorry, I couldn't open YouTube."
+
     if _HAS_PYAUTOGUI:
-        # After page loads, Tab to first video and press Enter
         def _auto_play():
-            time.sleep(5)
+            time.sleep(8)  # generous wait for page to fully load
             try:
-                pyautogui.press("tab", presses=6, interval=0.15)
-                pyautogui.press("enter")
-                log.info("Auto-played first YouTube result")
-            except Exception:
-                pass
+                w, h = pyautogui.size()
+                # Click somewhere neutral first to ensure browser has focus
+                pyautogui.click(w // 2, h // 2)
+                time.sleep(0.3)
+                # First video thumbnail on YouTube search results page is
+                # roughly at x=~33% of screen width, y=~38% of screen height.
+                # This lands squarely on the thumbnail, not the channel icon.
+                thumb_x = int(w * 0.33)
+                thumb_y = int(h * 0.38)
+                pyautogui.click(thumb_x, thumb_y)
+                log.info("Clicked first YouTube thumbnail at (%d, %d) for '%s'",
+                         thumb_x, thumb_y, query)
+            except Exception as exc:
+                log.warning("YouTube auto-play failed: %s", exc)
 
         threading.Thread(target=_auto_play, daemon=True).start()
-    return result
+        return f"Playing {query} on YouTube."
+
+    return f"Searching YouTube for {query}. Click a video to play it."
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -193,7 +211,7 @@ def play_spotify(query: str) -> str:
 
 def open_url(url: str) -> str:
     """Open an arbitrary URL in the default browser."""
-    if not url.startswith(("http://", "https://")):
+    if "://" not in url:
         url = "https://" + url
     log.info("Opening URL: %s", url)
     try:

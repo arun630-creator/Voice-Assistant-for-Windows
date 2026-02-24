@@ -23,6 +23,7 @@ from typing import Callable, Dict, Optional
 
 import datetime
 import random
+import re
 
 from brain.intent_parser import Intent
 from brain.memory import Memory
@@ -79,6 +80,8 @@ class CommandRouter:
             "hibernate_pc": self._handle_hibernate_pc,
             # Audio / display
             "set_volume": self._handle_set_volume,
+            "volume_up": self._handle_volume_up,
+            "volume_down": self._handle_volume_down,
             "mute": self._handle_mute,
             "unmute": self._handle_unmute,
             "set_brightness": self._handle_set_brightness,
@@ -88,6 +91,15 @@ class CommandRouter:
             "wifi_status": self._handle_wifi_status,
             "bluetooth_on": self._handle_bluetooth_on,
             "bluetooth_off": self._handle_bluetooth_off,
+            # Quick settings
+            "night_light_on": self._handle_night_light_on,
+            "night_light_off": self._handle_night_light_off,
+            "airplane_mode_on": self._handle_airplane_mode_on,
+            "airplane_mode_off": self._handle_airplane_mode_off,
+            "energy_saver_on": self._handle_energy_saver_on,
+            "energy_saver_off": self._handle_energy_saver_off,
+            "hotspot_on": self._handle_hotspot_on,
+            "hotspot_off": self._handle_hotspot_off,
             # System info
             "battery_status": self._handle_battery_status,
             "ip_address": self._handle_ip_address,
@@ -166,10 +178,23 @@ class CommandRouter:
         if not message:
             return "I didn't catch the message to send."
 
-        contact = self._contacts.find(contact_name)
+        # Check if the contact field is already a phone number
+        _phone_re = re.compile(r"^\+?\d[\d\s\-]{7,}$")
+        is_phone = bool(_phone_re.match(contact_name.strip()))
+
+        if is_phone:
+            phone = contact_name.strip().replace(" ", "").replace("-", "")
+            if not phone.startswith("+"):
+                # Assume Indian number if 10 digits
+                if len(phone) == 10:
+                    phone = "+91" + phone
+                else:
+                    phone = "+" + phone
+        else:
+            contact = self._contacts.find(contact_name)
+            phone = contact.get("phone", "") if contact else ""
 
         if app in ("whatsapp", "signal", "sms"):
-            phone = contact.get("phone", "") if contact else ""
             if not phone or phone.startswith("+91XXXX"):
                 return (
                     f"I don't have a phone number for {contact_name}. "
@@ -177,7 +202,6 @@ class CommandRouter:
                 )
             return messaging.send_whatsapp(phone, message)
         elif app == "telegram":
-            phone = contact.get("phone", "") if contact else ""
             if not phone:
                 return (
                     f"I don't have contact info for {contact_name}. "
@@ -214,11 +238,11 @@ class CommandRouter:
             return "What should I play?"
 
         if platform == "youtube":
-            return messaging.search_youtube(query)
+            return messaging.play_youtube(query)
         elif platform == "spotify":
             return messaging.play_spotify(query)
         else:
-            return messaging.search_youtube(query)
+            return messaging.play_youtube(query)
 
     def _handle_open_url(self, intent: Intent) -> str:
         url = intent.parameters.get("url", "")
@@ -305,6 +329,12 @@ class CommandRouter:
             return "I couldn't understand the volume level."
         return self._sys.set_volume(level)
 
+    def _handle_volume_up(self, _intent: Intent) -> str:
+        return self._sys.volume_up()
+
+    def _handle_volume_down(self, _intent: Intent) -> str:
+        return self._sys.volume_down()
+
     def _handle_mute(self, _intent: Intent) -> str:
         return self._sys.mute()
 
@@ -339,6 +369,34 @@ class CommandRouter:
 
     def _handle_bluetooth_off(self, _intent: Intent) -> str:
         return self._sys.bluetooth_off()
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  Quick Settings Toggles
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _handle_night_light_on(self, _intent: Intent) -> str:
+        return self._sys.night_light_on()
+
+    def _handle_night_light_off(self, _intent: Intent) -> str:
+        return self._sys.night_light_off()
+
+    def _handle_airplane_mode_on(self, _intent: Intent) -> str:
+        return self._sys.airplane_mode_on()
+
+    def _handle_airplane_mode_off(self, _intent: Intent) -> str:
+        return self._sys.airplane_mode_off()
+
+    def _handle_energy_saver_on(self, _intent: Intent) -> str:
+        return self._sys.energy_saver_on()
+
+    def _handle_energy_saver_off(self, _intent: Intent) -> str:
+        return self._sys.energy_saver_off()
+
+    def _handle_hotspot_on(self, _intent: Intent) -> str:
+        return self._sys.hotspot_on()
+
+    def _handle_hotspot_off(self, _intent: Intent) -> str:
+        return self._sys.hotspot_off()
 
     # ══════════════════════════════════════════════════════════════════════
     #  System info
@@ -414,7 +472,7 @@ class CommandRouter:
 
     def _handle_list_files(self, intent: Intent) -> str:
         folder = intent.parameters.get("folder", "desktop")
-        return self._files.list_files(folder)
+        return self._files.open_folder(folder)
 
     def _handle_empty_recycle_bin(self, _intent: Intent) -> str:
         return self._files.empty_recycle_bin()
